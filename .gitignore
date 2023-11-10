@@ -1,0 +1,39 @@
+# Python
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pyzw
+*.swp
+
+# Virtual Environment
+.venv
+venv/
+env/
+env.bak/
+env1/
+venv1/
+.env
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Editor/IDE
+.vscode/
+.idea/
+*.egg-info/
+*.egg
+dist/
+build/
+Output/
+*.bak
+*.swp
+*.swo
+*.pyc
+
+# Miscellaneous
+*.ini
+*.log
+*.sqlite3
+store.json
