@@ -1,19 +1,26 @@
+import os
 import random
-from typing import Any
+from typing import Tuple
 
 import matplotlib.pyplot as plt
 import networkx as nx
+from PIL import Image, ImageTk
 
 
-def interpolated_cell_color(value):
-    red = (255, 0, 0)
-    green = (0, 255, 0)
+def load_image(file_path: str, dim: Tuple[int, int] | None) -> ImageTk:
+    try:
+        path = os.path.abspath(file_path)
+        image = Image.open(path)
 
-    r = int(red[0] * (1 - value) + green[0] * value)
-    g = int(red[1] * (1 - value) + green[1] * value)
-    b = int(red[2] * (1 - value) + green[2] * value)
+        if dim:
+            image = image.resize(dim)
 
-    return (r, g, b)
+        photo_image = ImageTk.PhotoImage(image)
+        return photo_image
+
+    except Exception as e:
+        print(f"Error loading image: {e}")
+        return None
 
 
 def generate_graph(

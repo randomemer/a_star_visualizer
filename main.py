@@ -1,6 +1,8 @@
 import heapq
 import tkinter as tk
+import tkinter.ttk as ttk
 from collections import defaultdict
+from typing import Tuple
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -16,8 +18,8 @@ class AStarVisualizer(tk.Tk):
     # Algorithm vars
     pq = []
     visited = set()
+    f_values = defaultdict(utils.default_node_val)
     g_values = defaultdict(utils.default_node_val)
-    h_values = defaultdict(utils.default_node_val)
     came_from = {}
 
     def __init__(self) -> None:
@@ -26,24 +28,29 @@ class AStarVisualizer(tk.Tk):
         self.title("A* Star Visualizer")
         self.geometry("1280x720")
 
+        self.status = tk.StringVar(self, "idle")
+        self.status.trace_add("write", self.__on_status_change)
+
         self.frame = tk.Frame(self, padx=20, pady=20)
         self.frame.pack()
 
-        default_font = ("Calibri", 12)
+        default_font = ("Candara", 12)
         self.option_add("*Font", default_font)
 
-        gf = self.generator_frame()
-        gf.grid(row=0, column=0, sticky=tk.W + tk.E, pady=20)
+        gf = self.__generator_frame()
+        gf.grid(row=0, column=0, sticky=tk.W + tk.E, pady=(0, 20))
+
+        cf = self.__controls_frame()
+        cf.grid(row=1, column=0, sticky=tk.W + tk.E, pady=(0, 20))
 
         self.fig, self.ax = plt.subplots()
         self.fig.tight_layout()
 
         self.canvas = FigureCanvasTkAgg(self.fig, self.frame)
         self.canvas_widget = self.canvas.get_tk_widget()
-        self.canvas_widget.grid(row=1, column=0, sticky=tk.W + tk.E)
-        # self.frame.rowconfigure(1, weight=1)
+        self.canvas_widget.grid(row=2, column=0, sticky=tk.W + tk.E)
 
-    def generator_frame(self) -> tk.LabelFrame:
+    def __generator_frame(self) -> tk.LabelFrame:
         parent = tk.LabelFrame(self.frame, text="Graph Generator", padx=15, pady=15)
 
         # Generator vars
@@ -84,6 +91,56 @@ class AStarVisualizer(tk.Tk):
 
         return parent
 
+    def __controls_frame(self) -> tk.LabelFrame:
+        parent = tk.LabelFrame(self.frame, text="Visualizer Controls", padx=15, pady=15)
+        total_nodes = 0 if not self.graph else self.graph.number_of_nodes() - 1
+
+        # Controls Vars
+        self.paused = tk.BooleanVar(self)
+        self.paused.trace_add("write", self.__on_pause_change)
+
+        self.start_node = tk.IntVar(self)
+        self.end_node = tk.IntVar(self)
+
+        # Control Buttons
+        cbf = tk.Frame(parent)
+        cbf.pack()
+
+        #  Start Node Frame
+        snf = tk.Frame(cbf)
+        tk.Label(snf, text="Start Node").grid(row=0, column=0, sticky=tk.W)
+        self.start_entry = ttk.Spinbox(
+            snf, textvariable=self.start_node, from_=1, to=total_nodes
+        )
+        self.start_entry.grid(row=1, column=0)
+        snf.pack(side=tk.LEFT, padx=(0, 15))
+
+        # End Node Frame
+        enf = tk.Frame(cbf)
+        tk.Label(enf, text="End Node").grid(row=0, column=0, sticky=tk.W)
+        self.end_entry = ttk.Spinbox(
+            enf, textvariable=self.end_node, from_=0, to=total_nodes
+        )
+        self.end_entry.grid(row=1, column=0)
+        enf.pack(side=tk.LEFT, padx=(0, 15))
+
+        # Play / Pause Button
+        self.play_img = utils.load_image("./assets/play.png", (48, 48))
+        self.pause_img = utils.load_image("./assets/pause.png", (48, 48))
+        self.pause_btn = tk.Button(
+            cbf, image=self.play_img, command=self.__on_pause_click
+        )
+        self.pause_btn.pack(side=tk.LEFT, padx=(0, 15))
+
+        # Stop Button
+        self.stop_img = utils.load_image("./assets/stop.png", (48, 48))
+        self.stop_btn = tk.Button(
+            cbf, image=self.stop_img, command=self.__on_stop_click
+        )
+        self.stop_btn.pack(side=tk.LEFT, padx=(0, 15))
+
+        return parent
+
     def __generate_graph(self) -> None:
         self.graph = utils.generate_graph(
             self.node_count.get(),
@@ -91,6 +148,8 @@ class AStarVisualizer(tk.Tk):
             self.max_weight.get(),
             self.edge_prob.get(),
         )
+
+        print(self.graph.nodes)
 
         self.__draw_graph()
 
@@ -112,6 +171,34 @@ class AStarVisualizer(tk.Tk):
 
         self.fig.tight_layout()
         self.canvas.draw()
+
+    def __on_pause_click(self, *args):
+        self.paused.set(not self.paused.get())
+
+    def __on_pause_change(self, *args):
+        is_paused = self.paused.get()
+
+        img = self.pause_img if is_paused else self.play_img
+        self.pause_btn.config(image=img)
+
+    def __on_stop_click(self, *args):
+        self.status.set("idle")
+        # TODO: Reset State Here
+
+    def __on_status_change(self, *args):
+        print("Changed", self.status.get())
+
+    def __a_star_algorithm(self):
+        start = self.start_node.get()
+        end = self.end_node.get()
+
+        self.g_values[start] = 0
+        self.f_values[start] = self.__heuristic(start)
+
+        heapq.heappush(self.pq, (self.f_values))
+
+    def __heuristic(self, node: Tuple[int, int], goal: Tuple[int, int]) -> float:
+        return ((node[0] - goal[0]) ** 2 + (node[1] - goal[1]) ** 2) ** 0.5
 
 
 if __name__ == "__main__":
