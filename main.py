@@ -1,7 +1,9 @@
 import asyncio
 import heapq
+import queue
 import tkinter as tk
 import tkinter.ttk as ttk
+from threading import Thread
 from typing import List, Set, Tuple
 
 import matplotlib.pyplot as plt
@@ -14,11 +16,13 @@ import utils
 
 class AStarVisualizer(tk.Tk):
     graph: nx.Graph | None = None
+    gui_queue = queue.Queue()  # A queue to maintain async tasks
 
     # Algorithm vars
     pq: List[Tuple[int, int, List[int]]] = []  # (priority, current_node, path)
     visited: Set[int] = set()
     path: List[int] | None = None
+    task: asyncio.Future | None = None
 
     def __init__(self) -> None:
         super().__init__()
@@ -38,10 +42,10 @@ class AStarVisualizer(tk.Tk):
 
         # Controls Vars
         self.status = tk.StringVar(self, "idle")
-        self.status.trace_add("write", self.__on_status_change)
+        self.status.trace_add("write", self._on_status_change)
 
-        self.paused = tk.BooleanVar(self, False)
-        self.paused.trace_add("write", self.__on_pause_change)
+        self.paused = tk.BooleanVar(self, True)
+        self.paused.trace_add("write", self._on_pause_change)
 
         self.start_node = tk.IntVar(self)
         self.end_node = tk.IntVar(self)
@@ -89,6 +93,12 @@ class AStarVisualizer(tk.Tk):
 
         self.__generator_frame(self.gf)
         self.__controls_frame(self.cf)
+
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        self._gui_tasks_listener()
+        self.thread = Thread(target=self._start_thread)
+        self.thread.start()
 
     def __load_assets(self) -> None:
         """
@@ -184,10 +194,29 @@ class AStarVisualizer(tk.Tk):
         self.stop_btn = tk.Button(
             cbf,
             image=self.stop_img,
-            command=self.__on_stop_click,
-            state="normal" if self.status.get() != "idle" else "disabled",
+            command=self._on_stop_click,
+            state="normal" if self.status.get() == "running" else "disabled",
         )
         self.stop_btn.pack(side=tk.LEFT, padx=(0, 15))
+
+    def _start_thread(self):
+        """Run the asyncio loop in a seperate thread"""
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+        self.loop.run_forever()
+
+    def _gui_tasks_listener(self):
+        """
+        Listen to GUI tasks and execute them on the main thread.
+        """
+        while True:
+            try:
+                func = self.gui_queue.get_nowait()
+            except queue.Empty:
+                break
+            func()
+
+        self.after(100, self._gui_tasks_listener)
 
     def __generate_graph(self) -> None:
         """
@@ -227,7 +256,7 @@ class AStarVisualizer(tk.Tk):
         self.fig.tight_layout()
         self.canvas.draw()
 
-    def __update_graph(self) -> None:
+    def _update_graph(self) -> None:
         """
         Updates the graph with new state from the algorithm
         """
@@ -274,23 +303,25 @@ class AStarVisualizer(tk.Tk):
         self.canvas.draw()
 
     def __on_pause_click(self, *args):
-        if self.status.get() == "ready":
-            self.loop = asyncio.get_event_loop()
-            self.loop.run_until_complete(self.__start())
+        if self.status.get() != "running":
+            self._cleanup()
+            self.task = asyncio.run_coroutine_threadsafe(self._start(), self.loop)
+            self.paused.set(False)
+        else:
+            self.paused.set(not self.paused.get())
 
-        self.paused.set(not self.paused.get())
-
-    def __on_pause_change(self, *args):
+    def _on_pause_change(self, *args):
         is_paused = self.paused.get()
+        print("callback", args, is_paused)
 
-        img = self.pause_img if is_paused else self.play_img
+        img = self.play_img if is_paused else self.pause_img
         self.pause_btn.config(image=img)
 
-    def __on_stop_click(self, *args):
-        self.status.set("idle")
-        # TODO: Reset State Here
+    def _on_stop_click(self, *args):
+        self._cleanup()
+        self.status.set("ready")
 
-    def __on_status_change(self, *args):
+    def _on_status_change(self, *args):
         match self.status.get():
             case "idle":
                 pass
@@ -304,7 +335,7 @@ class AStarVisualizer(tk.Tk):
             case "done":
                 self.__controls_frame(self.cf)
 
-    def __a_star_algorithm(self):
+    def _a_star_algorithm(self):
         start, end = self.start_node.get(), self.end_node.get()
 
         self.pq = [(0, start, [])]
@@ -313,6 +344,7 @@ class AStarVisualizer(tk.Tk):
 
         while self.pq:
             (cost, cur, path) = heapq.heappop(self.pq)
+            print(cur, path)
 
             if cur not in self.visited:
                 path = path + [cur]
@@ -335,11 +367,11 @@ class AStarVisualizer(tk.Tk):
     def _heuristic(self, node: int, goal: int) -> float:
         return nx.shortest_path_length(self.graph, node, goal)
 
-    async def __start(self):
+    async def _start(self):
         """Start the algorithm."""
         self.status.set("running")
 
-        gen = self.__a_star_algorithm()
+        gen = self._a_star_algorithm()
         self.path = None
 
         while True:
@@ -348,27 +380,52 @@ class AStarVisualizer(tk.Tk):
                     cur_path = next(gen)
                     if cur_path:
                         self.path = cur_path
+
+                    self.gui_queue.put(self._update_graph)
             except StopIteration:
                 break
 
-            self.update_idletasks()
-            self.__update_graph()
             await asyncio.sleep(1)
 
         self.status.set("done")
 
+    def _cleanup(self):
+        """Reset the state variables of the algorithm"""
+        self.pq = []
+        self.visited = set()
+        self.path = []
+        self.paused.set(True)
+
+        if self.task:
+            self.task.cancel()
+
+        self._update_graph()
+
     def _on_vscroll(self, event: tk.Event) -> None:
         """Handle vertical scroll events on the canvas."""
+        if event.num not in (4, 5):
+            return
         scroll = -1 if event.num == 4 else 1
         self.scroll_canvas.yview_scroll(5 * scroll, "units")
         self.scroll_canvas.update_idletasks()
 
     def _on_canvas_configure(self, event: tk.Event) -> None:
+        """Callback for setting frame's width to canvas size"""
         self.scroll_canvas.itemconfig(self.frame_id, width=event.width)
 
     def _on_frame_configure(self, _: tk.Event) -> None:
         """Callback for setting scroll region on the canvas"""
         self.scroll_canvas.config(scrollregion=self.scroll_canvas.bbox(tk.ALL))
+
+    def _on_close(self) -> None:
+        """Close the window and clean up resources."""
+        print("Closing application")
+        if self.task:
+            self.task.cancel()
+
+        self.loop.stop()
+        self.destroy()
+        print("Closed")
 
 
 if __name__ == "__main__":
