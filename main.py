@@ -1,7 +1,5 @@
 import asyncio
 import heapq
-import threading
-import time
 import tkinter as tk
 import tkinter.ttk as ttk
 from typing import List, Set, Tuple
@@ -207,16 +205,66 @@ class AStarVisualizer(tk.Tk):
         if not self.graph:
             return
 
+        self.graph_pos = nx.spring_layout(self.graph)
         self.ax.clear()
 
-        pos = nx.spring_layout(self.graph)
         nx.draw_networkx(
-            self.graph, pos, ax=self.ax, node_color="#5a2675", font_color="#ffffff"
+            self.graph,
+            self.graph_pos,
+            ax=self.ax,
+            font_color=constants.WHITE,
+            node_color=constants.PURPLE,
         )
 
         weights = nx.get_edge_attributes(self.graph, "weight")
         nx.draw_networkx_edge_labels(
-            self.graph, pos=pos, ax=self.ax, edge_labels=weights
+            self.graph, pos=self.graph_pos, ax=self.ax, edge_labels=weights
+        )
+
+        self.fig.tight_layout()
+        self.canvas.draw()
+
+    def __update_graph(self) -> None:
+        """
+        Updates the graph with new state from the algorithm
+        """
+        cur_path_edges: Set[Tuple[int]] = set()
+        cur_path_nodes = set(self.path)
+
+        # Make a set of edges which represent the current path
+        for i in range(1, len(self.path)):
+            edge = (self.path[i - 1], self.path[i])
+            cur_path_edges.add(tuple(sorted(edge)))
+
+        node_colors, edge_colours = [], []
+
+        for node in self.graph.nodes:
+            color = constants.PURPLE
+            if node in self.visited:
+                color = constants.GREY
+            if node in cur_path_nodes:
+                color = constants.CERISE
+            node_colors.append(color)
+
+        for edge in self.graph.edges:
+            color = constants.BLACK
+            if edge in cur_path_edges:
+                color = constants.SANDY_BROWN
+            edge_colours.append(color)
+
+        self.ax.clear()
+        nx.draw_networkx(
+            self.graph,
+            self.graph_pos,
+            ax=self.ax,
+            font_color=constants.WHITE,
+            node_color=node_colors,
+            edge_color=edge_colours,
+        )
+
+        weights = nx.get_edge_attributes(self.graph, "weight")
+        nx.draw_networkx_edge_labels(
+            self.graph, pos=self.graph_pos, ax=self.ax, edge_labels=weights
         )
 
         self.fig.tight_layout()
@@ -256,8 +304,6 @@ class AStarVisualizer(tk.Tk):
     def __a_star_algorithm(self):
         start, end = self.start_node.get(), self.end_node.get()
 
-        print(start, end)
-
         self.pq = [(0, start, [])]
         self.visited = set()
         res = None
@@ -279,7 +325,7 @@ class AStarVisualizer(tk.Tk):
                             priority = len(path) + self.__heuristic(cur, end)
                             heapq.heappush(self.pq, (priority, neigh, path))
 
-                    yield None
+                    yield path
             else:
                 yield None
 
@@ -296,15 +342,16 @@ class AStarVisualizer(tk.Tk):
         while True:
             try:
                 if not self.paused.get():
-                    self.path = next(gen)
-                    print("YEHA", self.path)
+                    cur_path = next(gen)
+                    if cur_path:
+                        self.path = cur_path
             except StopIteration:
                 break
 
             self.update_idletasks()
+            self.__update_graph()
             await asyncio.sleep(1)
 
-        print("path", self.path)
         self.status.set("done")
 
 
