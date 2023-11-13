@@ -47,27 +47,30 @@ class AStarVisualizer(tk.Tk):
         self.end_node = tk.IntVar(self)
 
         # UI Initialization
-        self.scroll_canvas = tk.Canvas(self, borderwidth=1)
+        self.scroll_canvas = tk.Canvas(
+            self, borderwidth=0, highlightthickness=0, yscrollincrement=5
+        )
 
         self.frame = tk.Frame(self.scroll_canvas, padx=20, pady=20)
-        self.frame.pack()
+        self.frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         self.scrollbar = ttk.Scrollbar(
             self, orient=tk.VERTICAL, command=self.scroll_canvas.yview
         )
 
-        self.scroll_canvas.configure(yscrollcommand=self.scrollbar.set)
         self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.scroll_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.scroll_canvas.create_window(0, 0, window=self.frame, anchor=tk.NW)
-        self.frame.bind(
-            "<Configure>",
-            lambda *args: self.scroll_canvas.configure(
-                scrollregion=self.scroll_canvas.bbox(tk.ALL)
-            ),
+        self.frame_id = self.scroll_canvas.create_window(
+            0, 0, window=self.frame, anchor=tk.NW
         )
 
+        self.scroll_canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.scroll_canvas.bind("<Configure>", self._on_canvas_configure)
+        self.frame.bind("<Configure>", self._on_frame_configure)
+        self.scroll_canvas.bind_all("<Button>", self._on_vscroll)
+
         self.gf = tk.LabelFrame(self.frame, text="Graph Generator", padx=15, pady=15)
+        self.frame.grid_columnconfigure(0, weight=1)
         self.gf.grid(row=0, column=0, sticky=tk.W + tk.E, pady=(0, 20))
 
         self.cf = tk.LabelFrame(
@@ -322,14 +325,14 @@ class AStarVisualizer(tk.Tk):
 
                     for neigh in self.graph.neighbors(cur):
                         if neigh not in self.visited:
-                            priority = len(path) + self.__heuristic(cur, end)
+                            priority = len(path) + self._heuristic(cur, end)
                             heapq.heappush(self.pq, (priority, neigh, path))
 
                     yield path
             else:
                 yield None
 
-    def __heuristic(self, node: int, goal: int) -> float:
+    def _heuristic(self, node: int, goal: int) -> float:
         return nx.shortest_path_length(self.graph, node, goal)
 
     async def __start(self):
@@ -353,6 +356,19 @@ class AStarVisualizer(tk.Tk):
             await asyncio.sleep(1)
 
         self.status.set("done")
+
+    def _on_vscroll(self, event: tk.Event) -> None:
+        """Handle vertical scroll events on the canvas."""
+        scroll = -1 if event.num == 4 else 1
+        self.scroll_canvas.yview_scroll(5 * scroll, "units")
+        self.scroll_canvas.update_idletasks()
+
+    def _on_canvas_configure(self, event: tk.Event) -> None:
+        self.scroll_canvas.itemconfig(self.frame_id, width=event.width)
+
+    def _on_frame_configure(self, _: tk.Event) -> None:
+        """Callback for setting scroll region on the canvas"""
+        self.scroll_canvas.config(scrollregion=self.scroll_canvas.bbox(tk.ALL))
 
 
 if __name__ == "__main__":
