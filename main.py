@@ -306,7 +306,7 @@ class AStarVisualizer(tk.Tk):
         if self.status.get() != "running":
             self._cleanup()
             self.task = asyncio.run_coroutine_threadsafe(self._start(), self.loop)
-            self.paused.set(False)
+            self.after(100, lambda *args: self.paused.set(False))
         else:
             self.paused.set(not self.paused.get())
 
@@ -394,7 +394,7 @@ class AStarVisualizer(tk.Tk):
         self.pq = []
         self.visited = set()
         self.path = []
-        self.paused.set(True)
+        self.after(100, lambda *args: self.paused.set(True))
 
         if self.task:
             self.task.cancel()
